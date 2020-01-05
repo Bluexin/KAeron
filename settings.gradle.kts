@@ -1,4 +1,4 @@
-rootProject.name = "kaeron"
+rootProject.name = "KAeron"
 
 val kotlin_version: String by settings
 

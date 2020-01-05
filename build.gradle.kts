@@ -42,6 +42,10 @@ tasks.withType<KotlinCompile> {
     }
 }
 
+tasks.withType<AbstractArchiveTask> {
+    archiveBaseName.convention(provider { project.name.toLowerCase() })
+}
+
 fun Project.version(name: String) = extra.properties["${name}_version"] as? String
 
 fun Project.coroutine(module: String): Any =
