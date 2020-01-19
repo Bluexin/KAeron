@@ -28,10 +28,10 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.produce
 import mu.KotlinLogging.logger
+import org.agrona.BufferUtil
 import org.agrona.concurrent.BackoffIdleStrategy
 import org.agrona.concurrent.IdleStrategy
 import org.agrona.concurrent.UnsafeBuffer
-import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
 
 // TODO: investigate the use of Exclusive* stuff (https://github.com/real-logic/aeron/wiki/Client-Concurrency-Model)
@@ -53,37 +53,38 @@ data class AeronConfig(
  * Creates an Aeron producer, relaying everything from [input] to the Aeron bus.
  */
 @ExperimentalCoroutinesApi
-fun CoroutineScope.aeronProducer(config: AeronConfig, input: ReceiveChannel<ByteArray>): Job = launch(Dispatchers.IO) {
-    val logger = logger("Aeron producer")
-    logger.info { "Booting up the Aeron producer" }
+fun CoroutineScope.aeronProducer(config: AeronConfig, input: ReceiveChannel<ByteArray>): Job =
+    launch(Dispatchers.IO + CoroutineName("Aeron Producer")) {
+        val logger = logger("Aeron producer")
+        logger.info { "Booting up the Aeron producer" }
 
-    val pub = config.client.addPublication(config.url, config.stream)
-    val buff = UnsafeBuffer(ByteBuffer.allocateDirect(config.bufferSize))
-    val idleStrategy = config.idleStrategy
+        config.client.addPublication(config.url, config.stream).use { pub ->
+            val buff = UnsafeBuffer(BufferUtil.allocateDirectAligned(config.bufferSize, 64))
+            val idleStrategy = config.idleStrategy
 
-    logger.info { "Starting to send to Aeron" }
+            logger.info { "Starting to send to Aeron" }
 
-    for (i in input) {
-        logger.debug { "Sending ${String(i)}" }
-        buff.putBytes(0, i)
-        var res = pub.offer(buff, 0, i.size)
-        while (isActive && res <= 0) {
-            when (res) {
-                Publication.CLOSED -> {
-                    input.cancel()
-                    return@launch
+            outer@ for (i in input) {
+                logger.debug { "Sending ${String(i)}" }
+                buff.putBytes(0, i)
+                var res = pub.offer(buff, 0, i.size)
+                while (isActive && res <= 0) {
+                    when (res) {
+                        Publication.CLOSED -> {
+                            input.cancel()
+                            break@outer
+                        }
+                        else -> {
+                            idleStrategy.idle(res.toInt())
+                            res = pub.offer(buff, 0, i.size)
+                        }
+                    }
                 }
-                else -> {
-                    idleStrategy.idle()
-                    res = pub.offer(buff, 0, i.size)
-                }
+                logger.debug { "Sent ${String(i)}" }
+                if (!isActive) break
+                idleStrategy.reset()
             }
         }
-        if (!isActive) break
-        idleStrategy.reset()
-    }
-
-    pub.close()
 
     logger.info { "Stopping to send to Aeron (canceled: ${!isActive}, input closed: ${input.isClosedForReceive})" }
 }
@@ -93,26 +94,26 @@ fun CoroutineScope.aeronProducer(config: AeronConfig, input: ReceiveChannel<Byte
  */
 @ExperimentalCoroutinesApi
 fun CoroutineScope.aeronConsumer(config: AeronConfig): ReceiveChannel<ByteArray> =
-    produce(Dispatchers.IO, capacity = Channel.UNLIMITED) {
+    produce(Dispatchers.IO + CoroutineName("Aeron Consumer"), capacity = Channel.UNLIMITED) {
         val logger = logger("Aeron consumer")
         logger.info { "Booting up the Aeron consumer" }
 
         val idleStrategy = config.idleStrategy
-        val sub = config.client.addSubscription(config.url, config.stream)
         val fragmentHandler = FragmentAssembler(FragmentHandler { buffer, offset, length, _ ->
             val data = ByteArray(length)
             buffer.getBytes(offset, data)
+            logger.debug { "Received ${String(data)}" }
             offer(data)
         })
 
-        logger.info { "Starting to consume from Aeron" }
+        config.client.addSubscription(config.url, config.stream).use { sub ->
+            logger.info { "Starting to consume from Aeron" }
 
-        while (isActive) {
-            val fragmentsRead = sub.poll(fragmentHandler, 10)
-            if (isActive) idleStrategy.idle(fragmentsRead)
+            while (isActive) {
+                val fragmentsRead = sub.poll(fragmentHandler, 10)
+                if (isActive) idleStrategy.idle(fragmentsRead)
+            }
         }
-
-        sub.close()
 
         logger.info { "Stopping to consume from Aeron (canceled: ${!isActive}, output closed: ${channel.isClosedForSend})" }
     }

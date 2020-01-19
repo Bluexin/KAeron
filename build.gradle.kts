@@ -28,6 +28,15 @@ dependencies {
     implementation("org.slf4j", "slf4j-api", version("slf4j"))
     implementation("io.github.microutils", "kotlin-logging", version("klog"))
     runtimeOnly("ch.qos.logback", "logback-classic", version("logback"))
+
+    // Testing
+    testImplementation("org.junit.jupiter", "junit-jupiter-api", version("junit"))
+    testImplementation("org.junit.jupiter", "junit-jupiter-params", version("junit"))
+    testRuntimeOnly("org.junit.jupiter", "junit-jupiter-engine", version("junit"))
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 tasks.wrapper {
