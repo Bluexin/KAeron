@@ -23,6 +23,7 @@ import io.aeron.Aeron
 import io.aeron.FragmentAssembler
 import io.aeron.Publication
 import io.aeron.logbuffer.FragmentHandler
+import io.aeron.status.ChannelEndpointStatus
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
@@ -58,10 +59,17 @@ fun CoroutineScope.aeronProducer(config: AeronConfig, input: ReceiveChannel<Byte
         val logger = logger("Aeron producer")
         logger.info { "Booting up the Aeron producer" }
 
-        config.client.addPublication(config.url, config.stream).use { pub ->
+        config.client.addExclusivePublication(config.url, config.stream).use { pub ->
             val buff = UnsafeBuffer(BufferUtil.allocateDirectAligned(config.bufferSize, 64))
             val idleStrategy = config.idleStrategy
 
+            logger.info { "Waiting for active connection to Aeron" }
+            while (isActive && !pub.isConnected) {
+                when (pub.channelStatus()) {
+                    ChannelEndpointStatus.CLOSING, ChannelEndpointStatus.ERRORED -> return@use
+                    else -> idleStrategy.idle()
+                }
+            }
             logger.info { "Starting to send to Aeron" }
 
             outer@ for (i in input) {
@@ -106,7 +114,20 @@ fun CoroutineScope.aeronConsumer(config: AeronConfig): ReceiveChannel<ByteArray>
             offer(data)
         })
 
-        config.client.addSubscription(config.url, config.stream).use { sub ->
+        config.client.addSubscription(
+            config.url,
+            config.stream,
+            { logger.info { "Aeron is available" }  },
+            { logger.info { "Aeron went down" }  }
+        ).use { sub ->
+            while (isActive && !sub.isConnected) {
+                when (sub.channelStatus()) {
+                    ChannelEndpointStatus.CLOSING, ChannelEndpointStatus.ERRORED -> return@use
+                    else -> idleStrategy.idle()
+                }
+            }
+            idleStrategy.reset()
+
             logger.info { "Starting to consume from Aeron" }
 
             while (isActive) {

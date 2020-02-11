@@ -59,10 +59,6 @@ internal class AeronWrappersTest {
                     Aeron.Context()
                         .aeronDirectoryName(aeronDriver.aeronDirectoryName())
                         .errorHandler { logger.warn(it) { "Aeron error" } }
-                        .availableImageHandler { logger.info { "Aeron is available" } }
-                        .unavailableImageHandler { logger.info { "Aeron went down" } }
-                        .availableCounterHandler { _, registrationId, counterId -> logger.info { "Aeron conductor available: $registrationId $counterId" } }
-                        .unavailableCounterHandler { _, registrationId, counterId -> logger.info { "Aeron conductor unavailable: $registrationId $counterId" } }
                 ),
                 url = "aeron:udp?endpoint=localhost:40123", // TODO: config
                 stream = 10
