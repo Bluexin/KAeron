@@ -1,11 +1,16 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
+    `maven-publish`
     kotlin("jvm")
 }
 
 group = "be.bluexin"
 version = "1.0-SNAPSHOT"
+
+java {
+    withSourcesJar()
+}
 
 repositories {
     mavenCentral()
@@ -54,6 +59,31 @@ tasks.withType<KotlinCompile> {
 tasks.withType<AbstractArchiveTask> {
     archiveBaseName.convention(provider { project.name.toLowerCase() })
 }
+
+publishing {
+    publications.create<MavenPublication>("publication") {
+        from(components["java"])
+        this.artifactId = base.archivesBaseName
+    }
+
+    repositories {
+        val mavenPassword = if (hasProp("local")) null else prop("sbxMavenPassword")
+        maven {
+            url = uri(if (mavenPassword != null) "sftp://maven.sandboxpowered.org:22/sbxmvn/" else "file://$buildDir/repo")
+            if (mavenPassword != null) {
+                credentials(PasswordCredentials::class.java) {
+                    username = prop("sbxMavenUser")
+                    password = mavenPassword
+                }
+            }
+        }
+
+    }
+}
+
+fun hasProp(name: String): Boolean = extra.has(name)
+
+fun prop(name: String): String? = extra.properties[name] as? String
 
 fun Project.version(name: String) = extra.properties["${name}_version"] as? String
 
