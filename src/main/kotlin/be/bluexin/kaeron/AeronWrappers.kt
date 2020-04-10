@@ -35,8 +35,6 @@ import org.agrona.concurrent.IdleStrategy
 import org.agrona.concurrent.UnsafeBuffer
 import java.util.concurrent.TimeUnit
 
-// TODO: investigate the use of Exclusive* stuff (https://github.com/real-logic/aeron/wiki/Client-Concurrency-Model)
-
 data class AeronConfig(
     val client: Aeron,
     val url: String,
