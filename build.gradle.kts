@@ -63,7 +63,7 @@ tasks.withType<AbstractArchiveTask> {
 publishing {
     publications.create<MavenPublication>("publication") {
         from(components["java"])
-        this.artifactId = base.archivesBaseName
+        this.artifactId = base.archivesBaseName.toLowerCase()
     }
 
     repositories {
